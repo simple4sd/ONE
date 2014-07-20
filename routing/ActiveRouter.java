@@ -60,7 +60,7 @@ public abstract class ActiveRouter extends MessageRouter {
 		
 		this.policy = new MessageTransferAcceptPolicy(s);
 		
-		this.deleteDelivered = s.getBoolean(DELETE_DELIVERED_S, false);
+		this.deleteDelivered = s.getBoolean(DELETE_DELIVERED_S, true);
 		
 		if (s.contains(EnergyModel.INIT_ENERGY_S)) {
 			this.energy = new EnergyModel(s);
