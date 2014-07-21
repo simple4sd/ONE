@@ -30,6 +30,8 @@ public class Message implements Comparable<Message> {
 	private int size;
 	/** List of nodes this message has passed */
 	private List<DTNHost> path; 
+	
+	private Map<DTNHost, Double> copypath;
 	/** Next unique identifier to be given */
 	private static int nextUniqueId;
 	/** Unique ID of this message */
@@ -74,6 +76,7 @@ public class Message implements Comparable<Message> {
 		this.id = id;
 		this.size = size;
 		this.path = new ArrayList<DTNHost>();
+		this.copypath = new HashMap<DTNHost, Double>();
 		this.uniqueId = nextUniqueId;
 		
 		this.timeCreated = SimClock.getTime();
@@ -136,6 +139,14 @@ public class Message implements Comparable<Message> {
 	public void addNodeOnPath(DTNHost node) {
 		this.path.add(node);
 	}
+	/**
+	 * Adds a new node where a copy located in and its delivery probability
+	 * @param node
+	 * @param prob
+	 */
+	public void addNodeOnCopyPath(DTNHost node, Double prob) {
+		copypath.put(node, prob);
+	}
 	
 	/**
 	 * Returns a list of nodes this message has passed so far
@@ -143,6 +154,13 @@ public class Message implements Comparable<Message> {
 	 */
 	public List<DTNHost> getHops() {
 		return this.path;
+	}
+	/**
+	 * Returns the nodes with a copy of this message. 
+	 * @return the copypath 
+ 	 */
+	public Map<DTNHost,Double> getCopyPath() {
+		return copypath;
 	}
 	
 	/**
@@ -268,6 +286,7 @@ public class Message implements Comparable<Message> {
 	 */
 	protected void copyFrom(Message m) {
 		this.path = new ArrayList<DTNHost>(m.path);
+		this.copypath = new HashMap<DTNHost, Double>(m.copypath);
 		this.timeCreated = m.timeCreated;
 		this.responseSize = m.responseSize;
 		this.requestMsg  = m.requestMsg;
@@ -372,5 +391,6 @@ public class Message implements Comparable<Message> {
 	public void setAppID(String appID) {
 		this.appID = appID;
 	}
+	// self define
 	
 }
