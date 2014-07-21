@@ -53,8 +53,8 @@ public class FriendRouter extends ActiveRouter {
 	private Map<DTNHost, Double> destprob;
 	//private static Double leastTransTime; 
 	
-//	private double starttime = SimClock.getTime();
-	
+	private double starttime = 0;
+	private double update = 21600.0;
 	
 	public FriendRouter(Settings s) {
 		super(s);
@@ -70,7 +70,7 @@ public class FriendRouter extends ActiveRouter {
 		localdrop = new HashMap<DTNHost, List<Integer>>();
 		destprob = new HashMap<DTNHost, Double>();
 		//lamda = new HashMap<Set<DTNHost>, Double>();
-		count = 1;
+		//count = 1;
 	}
 	
 	protected FriendRouter(FriendRouter r) {
@@ -79,7 +79,7 @@ public class FriendRouter extends ActiveRouter {
 		this.timeRecords = r.timeRecords;
 		//this.lamda = r.lamda;
 		this.localdrop = r.localdrop;
-		this.count = r.count;
+		//this.count = r.count;
 		this.destprob = r.destprob;
 	}
 	/**
@@ -89,17 +89,39 @@ public class FriendRouter extends ActiveRouter {
 	public void changedConnection(Connection con) {
 		super.changedConnection(con);
 		
-		
-		//DTNHost myhost = getHost();
 		DTNHost otherhost = con.getOtherNode(getHost()); 
 		Set<DTNHost> hostSet = new HashSet<DTNHost>();
 		hostSet.add(getHost());
 		hostSet.add(otherhost);
 	
 		updateMetrics(hostSet, SimClock.getTime(), con.isUp());
+			
+		if(con.isUp()) {
+			updateCopyPath(getHost(), con.getOtherNode(getHost()));
+		}
 		
-//		
-//	
+		Double t = SimClock.getTime();
+		
+		if(t - starttime > update ) {
+			starttime += update;
+			
+			Map<DTNHost, Double> newprob = new HashMap<DTNHost, Double>();
+			
+			Iterator<DTNHost> iter = localdrop.keySet().iterator();
+			
+			while(iter.hasNext()) {
+				DTNHost host = iter.next();
+				List<Integer> list = localdrop.get(host);
+				
+				double drop = 0;
+				if(list.get(0) != 0)
+				  drop = (double)list.get(1)/(double)list.get(0);
+				newprob.put(host, drop);
+			}
+			destprob = newprob;
+			localdrop.clear();
+		}
+		
 //		Set<Set<DTNHost>> key = timeRecords.keySet();
 //			
 //		//System.out.println(" It's the host \t"+ this.getHost().getAddress());
@@ -116,6 +138,43 @@ public class FriendRouter extends ActiveRouter {
 //			//System.out.println("__end");
 //		}
 			
+	}
+	
+	public void updateCopyPath(DTNHost from, DTNHost to) {
+		Collection<Message> c1 = from.getMessageCollection();
+		Collection<Message> c2 = to.getMessageCollection();
+		
+		Iterator<Message> iter1 = c1.iterator();
+		
+		while(iter1.hasNext()) {
+			Message m1 = iter1.next();
+			Iterator<Message> iter2 = c2.iterator();
+			while(iter2.hasNext()) {
+				Message m2 = iter2.next();
+				if(m1.getId() == m2.getId()) {
+					Map<DTNHost, Double> cp1 = m1.getCopyPath();
+					Map<DTNHost, Double> cp2 = m2.getCopyPath();
+					
+					Iterator<DTNHost> iter = cp1.keySet().iterator();
+					while(iter.hasNext()) {
+						DTNHost host = iter.next();
+						if(cp2.containsKey(host) && cp2.get(host) < cp1.get(host)) {
+							m2.addNodeOnCopyPath(host, cp1.get(host));
+						} else if(!cp2.containsKey(host)) {
+							m2.addNodeOnCopyPath(host, cp1.get(host));
+						}
+					}
+					
+					cp2 = m2.getCopyPath();
+					iter = cp2.keySet().iterator();
+					
+					while(iter.hasNext()) {
+						DTNHost h = iter.next();
+						m1.addNodeOnCopyPath(h, cp2.get(h));
+					}
+				}
+			}
+		}
 	}
 	
 	public void updateMetrics(Set<DTNHost> host, Double time, Boolean connect) {
@@ -238,10 +297,14 @@ public class FriendRouter extends ActiveRouter {
 			return 0;
 		}
 	}
-	
-//	public double getlamda(Set<DTNHost> s) {
-//		return lamda.get(s);
-//	}
+
+	public double getDeliverProb(DTNHost host)
+	{
+		if(destprob.containsKey(host))
+			return destprob.get(host);
+		else
+			return 0.0;
+	}
 	
 	private Tuple<Message, Connection> tryOtherMessages() {
 		List<Tuple<Message, Connection>> messages = 
@@ -330,19 +393,7 @@ public class FriendRouter extends ActiveRouter {
 
 			double drop = (double)list.get(1)/(double)list.get(0);
 			
-
-//			
-//			if(lamda.containsKey(hostSet) != false) 
-//				System.out.println("hostSet is existing!");
-//			double lam = lamda.get(hostSet);
-//			
-//			double ttldrop = Math.pow(Math.E, -1 * lam);
-//			
-//			double recvprob =  (1- ttldrop) *(1 - drop);
-//			
-//			System.out.println("recvprob = " + recvprob);
-			
-			System.out.println("drop = " +  (1 - drop));
+//			System.out.println("drop = " +  (1 - drop));
 			if(drop < 0.5) {
 				result.add(new Tuple<Message, Connection>(message, con));
 			}
@@ -395,13 +446,14 @@ public class FriendRouter extends ActiveRouter {
 	public Message messageTransferred(String id, DTNHost from) {
 		
 		Message m = super.messageTransferred(id, from);
-		if (m == null) {
-			throw new SimError("No message with ID " + id + " in the incoming "+
-					"buffer of " + getHost());
-		}
-		DTNHost localHost = this.getHost();
-		DTNHost destHost = m.getTo();
 		
+		DTNHost localHost = this.getHost();
+		Double deliverprob = ((FriendRouter)from.getRouter()).getDeliverProb(localHost);
+		Message m1 = this.getMessage(m.getId());
+		m1.addNodeOnCopyPath(from, deliverprob);
+
+		
+		DTNHost destHost = m.getTo();
 		if(localHost == destHost ) return m;
 		
 		if(localdrop.get(destHost) == null) {
@@ -413,13 +465,7 @@ public class FriendRouter extends ActiveRouter {
 		} 
 			
 		int receive = localdrop.get(destHost).get(0);
-		localdrop.get(destHost).set(0, ++receive);
-		
-		//int dropm = localdrop.get(destHost).get(1);
-				
-		//System.out.println("The number of relayed is @ "  + receive + " " + dropm +" "+ localHost+ " " + destHost +
-		//		"\t$" + left);
-		
+		localdrop.get(destHost).set(0, ++receive);		
 		return m;
 	}
 	
@@ -440,24 +486,6 @@ public class FriendRouter extends ActiveRouter {
 		}
 		super.deleteMessage(id, drop);
 	}
-	
-	
-
-//	@Override
-//	protected Tuple<Message, Connection> tryMessagesForConnected(
-//			List<Tuple<Message, Connection>> tuples) {
-//		if (tuples.size() == 0) {
-//			return null;
-//		}
-//		
-//		for (Tuple<Message, Connection> t : tuples) {
-//			Message m = t.getKey();
-//			String id = m.getId();
-//			//插入数据库中，value = 0
-//
-//		}
-//		return super.tryMessagesForConnected(tuples);	
-//	}
 	
 	@Override
 	public RoutingInfo getRoutingInfo() {
