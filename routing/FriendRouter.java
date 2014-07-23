@@ -341,25 +341,110 @@ public class FriendRouter extends ActiveRouter {
 			}
 		}
 		
-		//System.out.println("run now in tryOtherMessage 2222");
-		//System.out.println(messages.size());
-		if (messages.size() == 0) {
+		
+		if( SimClock.getTime() < 10000) {
+			return tryMessagesForConnected(messages);
+		}
+		Iterator<Tuple<Message,Connection>> iter = messages.iterator();
+		List<Tuple<Message, Connection>> newmessages = 
+				new ArrayList<Tuple<Message, Connection>>();
+		
+		Set<Connection> conset = new HashSet<Connection>();
+		Connection nc = null;
+		List<Message> nm = new ArrayList<Message>();
+		while(iter.hasNext()) { 
+			Tuple<Message, Connection> mc = iter.next();
+			if(nc == null && !conset.contains(mc.getValue())) {
+				nc = mc.getValue();
+				nm.add(mc.getKey());
+				conset.add(mc.getValue());
+			} else {
+				if(nc == mc.getValue()) {
+					nm.add(mc.getKey());
+				}
+			}
 			
+			if(!iter.hasNext()) {
+				nm = messageAccept(nm);
+				for(Message m: nm) {
+				newmessages.add(new Tuple<Message, Connection>(m,nc));
+				}
+				nc = null;
+				nm.clear();
+			}
+		}
+		
+//		List<Message> sendlist= messageAccept();
+		if (messages.size() == 0) {	
 			return null;
 		}
 		
-//		if ( SimClock.getTime() > 9000) {
-//			messages = filterMessageByBuffer(messages);
-//		}
 		System.setProperty("java.util.Arrays.useLegacyMergeSort", "true");
 		Collections.sort(messages, new TupleComparator());
-		//System.out.println("run now in tryOtherMessage 33333333");
 		
 		return tryMessagesForConnected(messages);
 	}
 	
 	public Map<DTNHost, List<Integer>> getdrop() {
 		return localdrop;
+	}
+	
+	public List<Message> messageAccept(List<Message> sending) {
+		Collection<Message> m = this.getMessageCollection();
+		
+		Iterator<Message> iter = sending.iterator();
+		while(iter.hasNext()) {
+			m.add(iter.next());
+		}
+		
+		sending.clear();
+		Message[] ma = (Message[]) m.toArray();
+		
+		double a[][] = new double[ma.length+1][getBufferSize() + 1];
+		
+		for(int i = 0; i < ma.length+1; i++) {
+			for( int j=0; j < getBufferSize()+1; j++) {
+				a[i][j] = 0.0;
+			}
+		}
+		
+		for(int i = 0; i < ma.length; i++) {
+			for(int j=0; j < getBufferSize(); j++) {
+				int w = j - ma[i].getSize();
+				if(w < 0)
+					a[i+1][j]  = a[i][j];
+				else {
+					double costi = a[i][w] + mCost(ma[i]);
+					a[i+1][j] = a[i][j] > costi? a[i][j]: costi ;
+				}
+			}
+		}
+		
+		for(int i=ma.length -1, j = getBufferSize(); 
+				i >=0; --i) {
+			if(j - ma[i].getSize() >=0 &&
+					a[i+1][j] == a[i][j-ma[i].getSize()] + mCost(ma[i]))
+			{
+				sending.add(ma[i]);
+				j -= ma[i].getSize();
+			}
+		}
+		
+		return sending;
+	}
+	
+	Double mCost(Message m) {
+		
+		Map<DTNHost,Double> copypath = m.getCopyPath();
+		
+		double retval = 1.0;
+		
+		Iterator<Double> iter = copypath.values().iterator();
+		
+		while(iter.hasNext()) {
+			retval *= iter.next();
+		}
+		return retval;
 	}
 	
 	public List<Tuple<Message, Connection>> 
@@ -449,13 +534,19 @@ public class FriendRouter extends ActiveRouter {
 		
 		DTNHost localHost = this.getHost();
 		Double deliverprob = ((FriendRouter)from.getRouter()).getDeliverProb(localHost);
-		Message m1 = this.getMessage(m.getId());
-		m1.addNodeOnCopyPath(from, deliverprob);
-
+//		System.out.println("Message ID: " + m.getId());
+//		System.out.println("Message DEST: " + m.getTo());
+//		System.out.println("Hostname: " + this.getHost().toString() );
+		
 		
 		DTNHost destHost = m.getTo();
-		if(localHost == destHost ) return m;
-		
+		if(localHost == destHost ) 
+			return m;
+		else {
+			Message m1 = this.getMessage(m.getId());
+			m1.addNodeOnCopyPath(from, deliverprob);
+		}
+			
 		if(localdrop.get(destHost) == null) {
 			List<Integer> list = new ArrayList<Integer>();
 			list.add(0);
